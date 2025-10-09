@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./.github/mascott.png" alt="mascott" />
+</p>
+
 # fsend
 
 An application to send files to each other
