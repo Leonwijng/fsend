@@ -1,13 +1,31 @@
 package main
 
 import (
-	"crypto/rand"
 	"fmt"
+	"log"
+	"net"
+)
+
+const (
+	putfile uint8 = iota
+	listFiles
+	streamFile
 )
 
 func main() {
-	var buf = make([]byte, 4)
-	rand.Read(buf)
+	lis, err := net.Listen("tcp", ":3001")
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer lis.Close()
 
-	fmt.Println(string(buf))
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+
+	}
 }
