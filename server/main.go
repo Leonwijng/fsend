@@ -16,15 +16,21 @@ const (
 	streamFile
 	ping
 	bye
+	register // New: register client UUID
 )
 
+type ClientInfo struct {
+	uuid string
+	conn net.Conn
+}
+
 type ServerContext struct {
-	clients map[net.Conn]struct{}
+	clients map[net.Conn]*ClientInfo // Changed to store client info
 	lis     net.Listener
 	mu      sync.Mutex
 }
 
-func putFile(conn net.Conn) {
+func putFile(conn net.Conn, targetUUID string) {
 	var (
 		fnameSize uint8
 		fname     string
@@ -45,8 +51,11 @@ func putFile(conn net.Conn) {
 	}
 	fname = string(fnameBytes)
 
-	f, err := os.Create(fname)
+	// Save file in UUID directory
+	filePath := getUUIDDirectory(targetUUID) + "/" + fname
+	f, err := os.Create(filePath)
 	if err != nil {
+		fmt.Println("Error creating file:", err)
 		return
 	}
 	defer f.Close()
@@ -76,12 +85,23 @@ func putFile(conn net.Conn) {
 		fmt.Println("copy error:", err)
 		return
 	}
+
+	fmt.Printf("✓ Saved file %s for UUID %s\n", fname, targetUUID)
 }
 
 func (s *ServerContext) handleClient(conn net.Conn) {
 	s.mu.Lock()
-	s.clients[conn] = struct{}{}
+	s.clients[conn] = &ClientInfo{conn: conn}
 	s.mu.Unlock()
+
+	defer func() {
+		conn.Close()
+		s.mu.Lock()
+		delete(s.clients, conn)
+		s.mu.Unlock()
+	}()
+
+	var clientUUID string
 
 	for {
 		var o uint8
@@ -92,29 +112,68 @@ func (s *ServerContext) handleClient(conn net.Conn) {
 		}
 
 		switch o {
+		case register:
+			// Read UUID length
+			var uuidLen uint8
+			err = binary.Read(conn, binary.LittleEndian, &uuidLen)
+			if err != nil {
+				fmt.Println("Error reading UUID length:", err)
+				return
+			}
+
+			// Read UUID
+			uuidBytes := make([]byte, uuidLen)
+			_, err = conn.Read(uuidBytes)
+			if err != nil {
+				fmt.Println("Error reading UUID:", err)
+				return
+			}
+
+			clientUUID = string(uuidBytes)
+			s.mu.Lock()
+			s.clients[conn].uuid = clientUUID
+			s.mu.Unlock()
+
+			// Ensure directory exists for this UUID
+			err = ensureUUIDDirectory(clientUUID)
+			if err != nil {
+				fmt.Println("Error creating UUID directory:", err)
+				return
+			}
+
+			fmt.Printf("✓ Client registered: %s\n", clientUUID)
+
 		case putfile:
-			putFile(conn)
+			if clientUUID == "" {
+				fmt.Println("Error: Client not registered")
+				return
+			}
+			putFile(conn, clientUUID)
+
 		case listFiles:
-			err = handleListFiles(conn)
+			if clientUUID == "" {
+				fmt.Println("Error: Client not registered")
+				return
+			}
+			err = handleListFiles(conn, clientUUID)
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
+
 		case streamFile:
+
 		case ping:
 			_, err = conn.Write([]byte("pong"))
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
+
 		case bye:
-			conn.Close()
-			s.mu.Lock()
-			delete(s.clients, conn)
-			s.mu.Unlock()
+			return
 		}
 	}
-
 }
 
 func (s *ServerContext) Listen(address string) (err error) {
@@ -135,10 +194,16 @@ func (s *ServerContext) Listen(address string) (err error) {
 }
 
 func main() {
-	ctx := ServerContext{
-		clients: make(map[net.Conn]struct{}),
+	// Ensure files directory exists
+	err := ensureFilesDirectory()
+	if err != nil {
+		panic(err)
 	}
 
-	fmt.Println("listening on :3002 ")
+	ctx := ServerContext{
+		clients: make(map[net.Conn]*ClientInfo),
+	}
+
+	fmt.Println("Listening on :3002")
 	panic(ctx.Listen(":3002"))
 }
