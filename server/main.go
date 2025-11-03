@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -16,7 +17,8 @@ const (
 	streamFile
 	ping
 	bye
-	register // New: register client UUID
+	register   // Register client UUID
+	sendToUUID // Send file to another client's UUID
 )
 
 type ClientInfo struct {
@@ -51,8 +53,8 @@ func putFile(conn net.Conn, targetUUID string) {
 	}
 	fname = string(fnameBytes)
 
-	// Save file in UUID directory
-	filePath := getUUIDDirectory(targetUUID) + "/" + fname
+	// Save file in UUID directory (cross-platform path)
+	filePath := filepath.Join(getUUIDDirectory(targetUUID), fname)
 	f, err := os.Create(filePath)
 	if err != nil {
 		fmt.Println("Error creating file:", err)
@@ -87,6 +89,85 @@ func putFile(conn net.Conn, targetUUID string) {
 	}
 
 	fmt.Printf("✓ Saved file %s for UUID %s\n", fname, targetUUID)
+}
+
+// handleSendToUUID receives a file from one client and saves it to another client's UUID directory
+func (s *ServerContext) handleSendToUUID(conn net.Conn, senderUUID string) error {
+	// Read target UUID length
+	var targetUUIDLen uint8
+	err := binary.Read(conn, binary.LittleEndian, &targetUUIDLen)
+	if err != nil {
+		return fmt.Errorf("failed to read target UUID length: %w", err)
+	}
+
+	// Read target UUID
+	targetUUIDBytes := make([]byte, targetUUIDLen)
+	_, err = conn.Read(targetUUIDBytes)
+	if err != nil {
+		return fmt.Errorf("failed to read target UUID: %w", err)
+	}
+	targetUUID := string(targetUUIDBytes)
+
+	// Read filename length
+	var fnameLen uint8
+	err = binary.Read(conn, binary.LittleEndian, &fnameLen)
+	if err != nil {
+		return fmt.Errorf("failed to read filename length: %w", err)
+	}
+
+	// Read filename
+	fnameBytes := make([]byte, fnameLen)
+	_, err = conn.Read(fnameBytes)
+	if err != nil {
+		return fmt.Errorf("failed to read filename: %w", err)
+	}
+	fname := string(fnameBytes)
+
+	// Read file size
+	var fsize uint64
+	err = binary.Read(conn, binary.LittleEndian, &fsize)
+	if err != nil {
+		return fmt.Errorf("failed to read file size: %w", err)
+	}
+
+	// Ensure target UUID directory exists
+	err = ensureUUIDDirectory(targetUUID)
+	if err != nil {
+		return fmt.Errorf("failed to create target UUID directory: %w", err)
+	}
+
+	// Create file in target UUID's directory
+	filePath := filepath.Join(getUUIDDirectory(targetUUID), fname)
+	f, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer f.Close()
+
+	// Receive file data
+	buf := make([]byte, 32*1024)
+	remaining := fsize
+	for remaining > 0 {
+		toRead := len(buf)
+		if uint64(toRead) > remaining {
+			toRead = int(remaining)
+		}
+
+		n, err := conn.Read(buf[:toRead])
+		if err != nil {
+			return fmt.Errorf("failed to read file data: %w", err)
+		}
+
+		_, err = f.Write(buf[:n])
+		if err != nil {
+			return fmt.Errorf("failed to write file data: %w", err)
+		}
+
+		remaining -= uint64(n)
+	}
+
+	fmt.Printf("✓ File %s sent from %s to %s (%d bytes)\n", fname, senderUUID, targetUUID, fsize)
+	return nil
 }
 
 func (s *ServerContext) handleClient(conn net.Conn) {
@@ -162,6 +243,26 @@ func (s *ServerContext) handleClient(conn net.Conn) {
 			}
 
 		case streamFile:
+			if clientUUID == "" {
+				fmt.Println("Error: Client not registered")
+				return
+			}
+			err = handleStreamFile(conn, clientUUID)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+
+		case sendToUUID:
+			if clientUUID == "" {
+				fmt.Println("Error: Client not registered")
+				return
+			}
+			err = s.handleSendToUUID(conn, clientUUID)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
 
 		case ping:
 			_, err = conn.Write([]byte("pong"))

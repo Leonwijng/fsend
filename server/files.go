@@ -80,3 +80,75 @@ func handleListFiles(conn net.Conn, clientUUID string) error {
 	fmt.Printf("✓ Sent %d files to client %s\n", len(files), clientUUID)
 	return nil
 }
+
+// handleStreamFile sends a specific file to the client
+func handleStreamFile(conn net.Conn, clientUUID string) error {
+	// Read filename length
+	var fnameLen uint8
+	err := binary.Read(conn, binary.LittleEndian, &fnameLen)
+	if err != nil {
+		return fmt.Errorf("error reading filename length: %w", err)
+	}
+
+	// Read filename
+	fnameBytes := make([]byte, fnameLen)
+	_, err = conn.Read(fnameBytes)
+	if err != nil {
+		return fmt.Errorf("error reading filename: %w", err)
+	}
+	fname := string(fnameBytes)
+
+	// Get file path
+	filePath := filepath.Join(getUUIDDirectory(clientUUID), fname)
+
+	// Check if file exists
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Send error indicator (filesize = 0)
+			binary.Write(conn, binary.LittleEndian, uint64(0))
+			return fmt.Errorf("file not found: %s", fname)
+		}
+		return fmt.Errorf("error checking file: %w", err)
+	}
+
+	// Open file
+	f, err := os.Open(filePath)
+	if err != nil {
+		// Send error indicator
+		binary.Write(conn, binary.LittleEndian, uint64(0))
+		return fmt.Errorf("error opening file: %w", err)
+	}
+	defer f.Close()
+
+	// Send file size
+	fsize := uint64(fileInfo.Size())
+	err = binary.Write(conn, binary.LittleEndian, fsize)
+	if err != nil {
+		return fmt.Errorf("error sending file size: %w", err)
+	}
+
+	// Send file data
+	buf := make([]byte, 32*1024)
+	written, err := f.Read(buf)
+	for written > 0 {
+		_, err = conn.Write(buf[:written])
+		if err != nil {
+			return fmt.Errorf("error sending file data: %w", err)
+		}
+		written, err = f.Read(buf)
+	}
+
+	// Close file before deleting
+	f.Close()
+
+	// Delete file after successful download
+	err = os.Remove(filePath)
+	if err != nil {
+		fmt.Printf("⚠️  Warning: Failed to delete file %s: %v\n", fname, err)
+	} else {
+		fmt.Printf("✓ Sent and deleted file %s for client %s (%d bytes)\n", fname, clientUUID, fsize)
+	}
+
+	return nil
+}
