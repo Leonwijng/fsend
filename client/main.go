@@ -91,11 +91,28 @@ func putFile(filePath string, conn net.Conn, bufSize uint32) (err error) {
 }
 
 func main() {
-	l, err := net.Dial("tcp", ":3002")
-	if err != nil {
-		log.Fatalln(err)
-	}
-	defer l.Close()
+    // Create and connect client
+    client := NewClient("localhost:3002")
+    
+    err := client.Connect()
+    if err != nil {
+        log.Fatalln("Connection failed:", err)
+    }
+    defer client.Close()
+    
+    fmt.Println("✓ Connected to server")
 
-	putFile("mascott.png", l, 1024)
+    // Test ping
+    err = client.Ping()
+    if err != nil {
+        log.Fatalln("Ping failed:", err)
+    }
+    fmt.Println("✓ Ping successful")
+
+    // Upload file using existing putFile function
+    err = putFile("mascott.png", client.GetConnection(), 1024)
+    if err != nil {
+        log.Fatalln("File upload failed:", err)
+    }
+    fmt.Println("✓ File uploaded successfully")
 }
