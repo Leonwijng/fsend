@@ -32,11 +32,14 @@ type GioUI struct {
 	refreshBtn      widget.Clickable
 	downloadBtn     widget.Clickable
 	copyUUIDBtn     widget.Clickable
+	settingsBtn     widget.Clickable
 	fileList        widget.List
 	fileListButtons []widget.Clickable
 	uuidEntry       widget.Editor
 	filePathEntry   widget.Editor
+	serverEntry     widget.Editor
 	showInputPanel  bool
+	showSettingsPanel bool
 	inputMode       string // "upload" or "send"
 	submitBtn       widget.Clickable
 	cancelBtn       widget.Clickable
@@ -64,7 +67,12 @@ func NewGioUI(client *Client) *GioUI {
 			SingleLine: true,
 			Submit:     true,
 		},
+		serverEntry: widget.Editor{
+			SingleLine: true,
+			Submit:     true,
+		},
 		showInputPanel: false,
+		showSettingsPanel: false,
 		inputMode:      "",
 	}
 }
@@ -134,6 +142,13 @@ func (ui *GioUI) Run(w *app.Window) error {
 				}
 			}
 
+			if ui.settingsBtn.Clicked(gtx) {
+				ui.showSettingsPanel = true
+				// Load current server address
+				server, _ := loadOrCreateServerConfig()
+				ui.serverEntry.SetText(server)
+			}
+
 			if ui.downloadBtn.Clicked(gtx) {
 				if ui.selectedFile >= 0 && ui.selectedFile < len(ui.currentFiles) {
 					filename := ui.currentFiles[ui.selectedFile]
@@ -181,6 +196,7 @@ func (ui *GioUI) Run(w *app.Window) error {
 			// Handle cancel button
 			if ui.cancelBtn.Clicked(gtx) {
 				ui.showInputPanel = false
+				ui.showSettingsPanel = false
 			}
 
 			// Draw the UI
@@ -191,6 +207,11 @@ func (ui *GioUI) Run(w *app.Window) error {
 }
 
 func (ui *GioUI) Layout(gtx layout.Context) layout.Dimensions {
+	// If settings panel is shown, show overlay
+	if ui.showSettingsPanel {
+		return ui.layoutSettingsPanel(gtx)
+	}
+
 	// If input panel is shown, show overlay
 	if ui.showInputPanel {
 		return ui.layoutInputPanel(gtx)
@@ -223,6 +244,13 @@ func (ui *GioUI) Layout(gtx layout.Context) layout.Dimensions {
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								btn := material.Button(ui.theme, &ui.copyUUIDBtn, "📋 Copy")
 								btn.Background = color.NRGBA{R: 100, G: 100, B: 100, A: 255}
+								btn.TextSize = unit.Sp(12)
+								return btn.Layout(gtx)
+							}),
+							layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+								btn := material.Button(ui.theme, &ui.settingsBtn, "⚙️")
+								btn.Background = color.NRGBA{R: 158, G: 158, B: 158, A: 255}
 								btn.TextSize = unit.Sp(12)
 								return btn.Layout(gtx)
 							}),
@@ -384,7 +412,7 @@ func (ui *GioUI) layoutInputPanel(gtx layout.Context) layout.Dimensions {
 
 func RunGUI() {
 	// Connect to server
-	client, err := NewClient("localhost:3002")
+	client, err := NewClient("")
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
 	}
@@ -411,4 +439,76 @@ func RunGUI() {
 	}()
 
 	app.Main()
+}
+
+func (ui *GioUI) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
+	return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		// Create a card-like panel
+		gtx.Constraints.Max.X = gtx.Dp(unit.Dp(450))
+
+		return layout.UniformInset(unit.Dp(20)).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					label := material.H6(ui.theme, "⚙️ Server Settings")
+					return label.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(16)}.Layout),
+
+				// Server address input
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							label := material.Body2(ui.theme, "Server Address (IP:PORT):")
+							return label.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Height: unit.Dp(4)}.Layout),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							editor := material.Editor(ui.theme, &ui.serverEntry, "e.g. 34.12.187.203:3002")
+							editor.Color = color.NRGBA{R: 0, G: 0, B: 0, A: 255}
+							return editor.Layout(gtx)
+						}),
+					)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
+				
+				// Info text
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					label := material.Caption(ui.theme, "⚠️ You need to restart the app after changing the server")
+					label.Color = color.NRGBA{R: 200, G: 100, B: 0, A: 255}
+					return label.Layout(gtx)
+				}),
+				layout.Rigid(layout.Spacer{Height: unit.Dp(20)}.Layout),
+
+				// Buttons
+				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							if ui.submitBtn.Clicked(gtx) {
+								newServer := ui.serverEntry.Text()
+								if newServer != "" {
+									err := SetServerAddress(newServer)
+									if err != nil {
+										ui.statusText = "❌ Failed to save: " + err.Error()
+									} else {
+										ui.statusText = "✓ Server saved! Please restart the app."
+										ui.showSettingsPanel = false
+									}
+								}
+							}
+							
+							btn := material.Button(ui.theme, &ui.submitBtn, "Save")
+							btn.Background = color.NRGBA{R: 76, G: 175, B: 80, A: 255}
+							return btn.Layout(gtx)
+						}),
+						layout.Rigid(layout.Spacer{Width: unit.Dp(8)}.Layout),
+						layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+							btn := material.Button(ui.theme, &ui.cancelBtn, "Cancel")
+							btn.Background = color.NRGBA{R: 158, G: 158, B: 158, A: 255}
+							return btn.Layout(gtx)
+						}),
+					)
+				}),
+			)
+		})
+	})
 }

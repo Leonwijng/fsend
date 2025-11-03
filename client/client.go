@@ -21,6 +21,8 @@ const (
 )
 
 const uidFile = ".fsend_uid"
+const serverConfigFile = ".fsend_server"
+const defaultServer = "34.12.187.203:3002"
 
 // Client represents a connection to the fsend server
 type Client struct {
@@ -56,11 +58,54 @@ func loadOrCreateUID() (string, error) {
 	return "", fmt.Errorf("failed to read UID file: %w", err)
 }
 
+// loadOrCreateServerConfig loads the server address from file or creates default
+func loadOrCreateServerConfig() (string, error) {
+	// Try to read existing server config
+	data, err := os.ReadFile(serverConfigFile)
+	if err == nil {
+		server := string(data)
+		fmt.Println("✓ Using configured server:", server)
+		return server, nil
+	}
+
+	// Config doesn't exist, use default
+	if os.IsNotExist(err) {
+		// Save default server to file
+		err = os.WriteFile(serverConfigFile, []byte(defaultServer), 0644)
+		if err != nil {
+			return defaultServer, nil // Use default even if save fails
+		}
+
+		fmt.Println("✓ Using default server:", defaultServer)
+		return defaultServer, nil
+	}
+
+	return defaultServer, nil
+}
+
+// SetServerAddress saves a new server address
+func SetServerAddress(address string) error {
+	err := os.WriteFile(serverConfigFile, []byte(address), 0644)
+	if err != nil {
+		return fmt.Errorf("failed to save server address: %w", err)
+	}
+	fmt.Println("✓ Server address saved:", address)
+	return nil
+}
+
 // NewClient creates a new client instance
 func NewClient(address string) (*Client, error) {
 	uid, err := loadOrCreateUID()
 	if err != nil {
 		return nil, err
+	}
+
+	// If no address provided, load from config
+	if address == "" {
+		address, err = loadOrCreateServerConfig()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &Client{

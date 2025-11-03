@@ -105,7 +105,7 @@ func main() {
 
 	// CLI mode
 	// Create and connect client
-	client, err := NewClient("localhost:3002")
+	client, err := NewClient("")
 	if err != nil {
 		log.Fatalln("Failed to create client:", err)
 	}
