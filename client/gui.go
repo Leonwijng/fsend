@@ -22,27 +22,27 @@ import (
 )
 
 type GioUI struct {
-	client          *Client
-	theme           *material.Theme
-	statusText      string
-	currentFiles    []string
-	selectedFile    int
-	uploadBtn       widget.Clickable
-	sendBtn         widget.Clickable
-	refreshBtn      widget.Clickable
-	downloadBtn     widget.Clickable
-	copyUUIDBtn     widget.Clickable
-	settingsBtn     widget.Clickable
-	fileList        widget.List
-	fileListButtons []widget.Clickable
-	uuidEntry       widget.Editor
-	filePathEntry   widget.Editor
-	serverEntry     widget.Editor
-	showInputPanel  bool
+	client            *Client
+	theme             *material.Theme
+	statusText        string
+	currentFiles      []string
+	selectedFile      int
+	uploadBtn         widget.Clickable
+	sendBtn           widget.Clickable
+	refreshBtn        widget.Clickable
+	downloadBtn       widget.Clickable
+	copyUUIDBtn       widget.Clickable
+	settingsBtn       widget.Clickable
+	fileList          widget.List
+	fileListButtons   []widget.Clickable
+	uuidEntry         widget.Editor
+	filePathEntry     widget.Editor
+	serverEntry       widget.Editor
+	showInputPanel    bool
 	showSettingsPanel bool
-	inputMode       string // "upload" or "send"
-	submitBtn       widget.Clickable
-	cancelBtn       widget.Clickable
+	inputMode         string // "upload" or "send"
+	submitBtn         widget.Clickable
+	cancelBtn         widget.Clickable
 }
 
 func NewGioUI(client *Client) *GioUI {
@@ -71,9 +71,9 @@ func NewGioUI(client *Client) *GioUI {
 			SingleLine: true,
 			Submit:     true,
 		},
-		showInputPanel: false,
+		showInputPanel:    false,
 		showSettingsPanel: false,
-		inputMode:      "",
+		inputMode:         "",
 	}
 }
 
@@ -470,7 +470,7 @@ func (ui *GioUI) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 					)
 				}),
 				layout.Rigid(layout.Spacer{Height: unit.Dp(8)}.Layout),
-				
+
 				// Info text
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					label := material.Caption(ui.theme, "⚠️ You need to restart the app after changing the server")
@@ -495,7 +495,7 @@ func (ui *GioUI) layoutSettingsPanel(gtx layout.Context) layout.Dimensions {
 									}
 								}
 							}
-							
+
 							btn := material.Button(ui.theme, &ui.submitBtn, "Save")
 							btn.Background = color.NRGBA{R: 76, G: 175, B: 80, A: 255}
 							return btn.Layout(gtx)
