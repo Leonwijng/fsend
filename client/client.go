@@ -7,6 +7,15 @@ import (
     "time"
 )
 
+
+const (
+    putfile uint8 = iota
+    listFiles
+    streamFile
+    ping
+    bye
+)
+
 // Client represents a connection to the fsend server
 type Client struct {
     conn    net.Conn
@@ -71,4 +80,44 @@ func (c *Client) Close() error {
 // GetConnection returns the underlying connection for file operations
 func (c *Client) GetConnection() net.Conn {
     return c.conn
+}
+
+// ListFiles requests and returns a list of available files from the server
+func (c *Client) ListFiles() ([]string, error) {
+    if c.conn == nil {
+        return nil, fmt.Errorf("not connected to server")
+    }
+
+    // Send listFiles command
+    err := binary.Write(c.conn, binary.LittleEndian, listFiles)
+    if err != nil {
+        return nil, fmt.Errorf("failed to send listFiles command: %w", err)
+    }
+
+    // Read number of files
+    var fileCount uint32
+    err = binary.Read(c.conn, binary.LittleEndian, &fileCount)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read file count: %w", err)
+    }
+
+    // Read each filename
+    files := make([]string, 0, fileCount)
+    for i := uint32(0); i < fileCount; i++ {
+        var nameLen uint8
+        err = binary.Read(c.conn, binary.LittleEndian, &nameLen)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read filename length: %w", err)
+        }
+
+        nameBuf := make([]byte, nameLen)
+        _, err = c.conn.Read(nameBuf)
+        if err != nil {
+            return nil, fmt.Errorf("failed to read filename: %w", err)
+        }
+
+        files = append(files, string(nameBuf))
+    }
+
+    return files, nil
 }

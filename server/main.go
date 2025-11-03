@@ -95,6 +95,11 @@ func (s *ServerContext) handleClient(conn net.Conn) {
 		case putfile:
 			putFile(conn)
 		case listFiles:
+			err = handleListFiles(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
 		case streamFile:
 		case ping:
 			_, err = conn.Write([]byte("pong"))
